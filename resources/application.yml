@@ -1,0 +1,4 @@
+version: '1.0'
+spec:
+  environment:
+    java: /home/{$USER}/.asdf/shims/java
