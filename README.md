@@ -11,6 +11,12 @@ data or problems that the application may cause **(use at your own risk)**
 Documentation about the tool and details can be
 seen [here](https://www.michael-noll.com/blog/2013/03/17/reading-and-writing-avro-files-from-the-command-line/).
 
+
+### Settings
+
+It's necessary set the path of Java will be used to run Avro Tools. To configure edit the [application.yml](resources/application.yml).
+If you don't know where is the Java, you can use the whereis java command to show.
+
 ### Install
 
 ```bash
