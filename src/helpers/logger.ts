@@ -9,7 +9,7 @@ const logger = createLogger({
         format.metadata(),
         format.timestamp(),
         format.printf(({timestamp, level, message}) => {
-            return `[${timestamp}] ${_.capitalize(level)}: ${message}.`;
+            return `[${timestamp}] ${_.capitalize(level)}: ${message}`;
         })
     ),
 });

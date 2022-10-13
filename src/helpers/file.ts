@@ -1,6 +1,7 @@
-import * as fs from 'fs';
 import * as Path from 'path';
 import * as _ from 'lodash';
+
+const fs = require('fs')
 
 export class Files {
 
@@ -32,10 +33,18 @@ export class Files {
         return fs.readdirSync(path);
     }
 
+    public static deleteFiles(patches: Array<string>) {
+        patches.forEach((e: string) => this.delete(e));
+    }
+
     public static delete(path: string): void {
         if (this.exists(path)) {
             fs.unlinkSync(path);
         }
+    }
+
+    public static rename(from: string, to: string) {
+        fs.renameSync(from, to);
     }
 
 }

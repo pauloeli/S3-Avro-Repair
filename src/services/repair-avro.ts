@@ -48,16 +48,21 @@ export class RepairAvro {
                 .start(values.Contents?.length);
 
             for (const item of values.Contents) {
-                const path = await this.donwload(awsS3, parameters, item);
-                await this.analyze(path);
+                const avroPath = await this.donwload(awsS3, parameters, item);
+
+                if (!await this.analyze(avroPath)) {
+                    await this.repair(avroPath)
+                        ? logger.info(`[${path.basename(avroPath)}] was repaired.`)
+                        : logger.info(`[${path.basename(avroPath)}] cannot be repaired.`);
+                }
 
                 progressBar.increment();
             }
         } catch (e: any) {
-            logger.warn(`File: ${parameters.name} ignored, because an error occurred.`, e);
+            logger.warn(`Aborted, because an error occurred.`, e);
         }
 
-        logger.info(`Process ended`);
+        logger.info(`Finished`);
     }
 
     private static async promptParameters(): Promise<any> {
@@ -73,7 +78,7 @@ export class RepairAvro {
                 folder: {
                     message: 'Folder',
                     required: true,
-                    default: 'extensoes/execucoes-metricas/data=2022-10-03/'
+                    default: 'extensoes/execucoes-metricas/data=2022-10-12/'
                 }
             }
         };
@@ -93,42 +98,45 @@ export class RepairAvro {
         return Path.join(process.cwd(), `avro/${filename}`);
     }
 
-    private async analyze(filePath: string, tryRepair: boolean = true): Promise<boolean> {
-        const outputFile = path.join(path.dirname(filePath), `${path.basename(filePath)}.json`);
+    private async analyze(avroPath: string, deleteIfSuccess: boolean = true): Promise<boolean> {
+        const outputFile = path.join(path.dirname(avroPath), `${path.basename(avroPath)}.json`);
 
         try {
             const bash = util.promisify(require('child_process').exec);
-            const {stdout} = await bash(`${this.configuration.spec.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar tojson ${filePath} > ${outputFile}`);
+            const {stdout} = await bash(`${this.configuration.spec.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar tojson ${avroPath} > ${outputFile}`);
             if (stdout.length <= 0 && this.isValidJson(outputFile)) {
-                return Promise.resolve(true);
+                return true;
             }
-        } catch (e) {
-            logger.error(`Fail to export ${path.basename(filePath)}.`);
+        } catch (e: any) {
+            logger.error(`[${path.basename(avroPath)}] fail to export. Reason: ${e?.message || e}`);
+        } finally {
+            deleteIfSuccess && Files.deleteFiles([avroPath, outputFile]);
         }
 
-        return tryRepair ? this.repair(filePath) : Promise.resolve(false);
+        return false;
     }
 
-    private async repair(filePath: string): Promise<boolean> {
-        const outputFile = path.join(path.dirname(filePath), `repaired.${path.basename(filePath)}`);
+    private async repair(avroPath: string): Promise<boolean> {
+        const outputFile = path.join(path.dirname(avroPath), `repaired.${path.basename(avroPath)}`);
 
         try {
             const bash = util.promisify(require('child_process').exec);
-            await bash(`${this.configuration.spec.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar repair ${filePath} ${outputFile}`);
+            await bash(`${this.configuration.spec.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar repair ${avroPath} ${outputFile}`);
 
             if (!await this.analyze(outputFile, false)) {
-                this.deleteFiles([filePath, outputFile]);
-
-                logger.warn(`File ${filePath} cannot be repaired.`);
+                Files.delete(outputFile);
+                return false;
             } else {
-                logger.info(`File ${filePath} was repaired.`);
-                return Promise.resolve(true);
+                Files.delete(avroPath);
+                Files.rename(outputFile, avroPath);
+
+                return true;
             }
-        } catch (e) {
-            logger.error(`File ${path.basename(filePath)} cannot be repaired. Reason: ${e}`);
+        } catch (e: any) {
+            logger.error(`[${path.basename(avroPath)}] cannot be repaired. Reason: ${e?.message || e}`);
         }
 
-        return Promise.resolve(false);
+        return false;
     }
 
     private isValidJson(filePath: string): boolean {
@@ -136,17 +144,6 @@ export class RepairAvro {
             return Files.getContent(filePath).length > 0;
         } catch (e) {
             return false;
-        }
-    }
-
-    private deleteFiles(patches: Array<string>) {
-        try {
-            patches.forEach((path: string) => {
-                if (fs.exists(path)) {
-                    fs.unlinkSync(path);
-                }
-            });
-        } catch (e) {
         }
     }
 
