@@ -2,3 +2,6 @@ version: '1.0'
 spec:
   environment:
     java: /home/paulo/.asdf/shims/java
+  avro:
+    limit: 1000000
+    samplerate: .01

@@ -6,6 +6,6 @@ import {Yaml} from './helpers/yaml';
     Validators.requireMultiNonNull([process.env?.AWS_ACCESS_KEY_ID, process.env?.AWS_SECRET_ACCESS_KEY, process.env?.AWS_REGION],
         'It is mandatory to provide access credentials');
 
-    await new RepairAvro(Yaml.getConfig()).process();
+    await new RepairAvro(Yaml.getConfig()?.spec).process();
 
 })();

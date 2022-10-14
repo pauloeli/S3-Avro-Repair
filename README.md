@@ -1,7 +1,7 @@
 # S3 Avro Repair
 
-NodeJs application to connect and download avro from S3 bucket, test and repair.
-This application has been builded to solve a specific problem, so improvements can be done.
+NodeJs application to connect and download avro from S3 bucket, test and repair. You can configure to upload de recoverd
+file, if you want. This application has been builded to solve a specific problem, so improvements can be done.
 
 I wish this project can be used to "start" from other people needs. In no way can I be held responsible for any loss of
 data or problems that the application may cause **(use at your own risk)**
@@ -11,11 +11,14 @@ data or problems that the application may cause **(use at your own risk)**
 Documentation about the tool and details can be
 seen [here](https://www.michael-noll.com/blog/2013/03/17/reading-and-writing-avro-files-from-the-command-line/).
 
+More about `cat` command you can read in [this](https://www.mail-archive.com/dev@avro.apache.org/msg07299.html) feature
+documentation.
 
 ### Settings
 
-It's necessary set the path of Java will be used to run Avro Tools. To configure edit the [application.yml](resources/application.yml).
-If you don't know where is the Java, you can use the whereis java command to show.
+It's necessary set the path of Java will be used to run Avro Tools. To configure edit
+the [application.yml](resources/application.yml).
+If you don't know where is the Java, you can use the `whereis` linux command to show.
 
 ### Install
 
@@ -44,8 +47,3 @@ DEBUG_LEVEL="debug" AWS_ACCESS_KEY_ID="" AWS_REGION="" AWS_SECRET_ACCESS_KEY="" 
 ### Related projects
 
 - [Avro Tools AWS](https://github.com/Segence/avro-tools-aws)
-
-### Todo
-
-- [ ] Remove corrupted file from bucket
-- [ ] Remove the JSON converted file

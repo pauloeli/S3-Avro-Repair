@@ -5,6 +5,7 @@ import Path from 'path';
 import * as util from 'util';
 import {Files} from '../helpers/file';
 import {ProgressBar} from '../helpers/progress-bar';
+import {ManagedUpload} from 'aws-sdk/clients/s3';
 
 const prompt = require('prompt');
 const logger = require('../helpers/logger');
@@ -12,10 +13,12 @@ const fs = require('fs').promises;
 
 export class RepairAvro {
 
-    private configuration: any;
+    private readonly configuration: any;
+    private readonly baseAvroToolsCommandLine: string;
 
     constructor(configuration: any) {
         this.configuration = configuration;
+        this.baseAvroToolsCommandLine = `${this.configuration.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar`;
 
         AWS.config.update({
             accessKeyId: process.env?.AWS_ACCESS_KEY_ID,
@@ -33,7 +36,6 @@ export class RepairAvro {
         try {
             const values = await awsS3.listObjects({
                 Bucket: parameters.bucket,
-                Delimiter: '/',
                 Prefix: parameters.folder
             }).promise();
 
@@ -51,9 +53,18 @@ export class RepairAvro {
                 const avroPath = await this.donwload(awsS3, parameters, item);
 
                 if (!await this.analyze(avroPath)) {
-                    await this.repair(avroPath)
-                        ? logger.info(`[${path.basename(avroPath)}] was repaired.`)
-                        : logger.info(`[${path.basename(avroPath)}] cannot be repaired.`);
+                    let repaired = await this.repair(avroPath);
+                    if (repaired) {
+                        logger.info(`[${path.basename(avroPath)}] was repaired.`);
+                        if (parameters.replace) {
+                            await this.upload(awsS3, parameters, item);
+                            logger.info(`[${path.basename(avroPath)}] corrupted version has replaced by new on the bucket.`);
+                        }
+                    } else {
+                        logger.info(`[${path.basename(avroPath)}] cannot be repaired.`);
+                    }
+                } else {
+                    Files.delete(avroPath);
                 }
 
                 progressBar.increment();
@@ -78,7 +89,13 @@ export class RepairAvro {
                 folder: {
                     message: 'Folder',
                     required: true,
-                    default: 'extensoes/execucoes-metricas/data=2022-10-12/'
+                    default: 'extensoes/execucoes-metricas/data=2022-10-11'
+                },
+                replace: {
+                    message: 'Replace on bucket (upload)',
+                    required: true,
+                    default: false,
+                    type: 'boolean'
                 }
             }
         };
@@ -98,19 +115,27 @@ export class RepairAvro {
         return Path.join(process.cwd(), `avro/${filename}`);
     }
 
-    private async analyze(avroPath: string, deleteIfSuccess: boolean = true): Promise<boolean> {
-        const outputFile = path.join(path.dirname(avroPath), `${path.basename(avroPath)}.json`);
+    private async upload(awsS3: S3, parameters: any, avro: any): Promise<ManagedUpload.SendData> {
+        return await awsS3.upload({
+            Bucket: `${parameters.bucket}/${parameters.folder}`,
+            Key: path.basename(avro),
+            Body: Files.getContent(avro)
+        }).promise();
+    }
+
+    private async analyze(avroPath: string): Promise<boolean> {
+        const outputFile = path.join(path.dirname(avroPath), `sample.${path.basename(avroPath)}`);
 
         try {
             const bash = util.promisify(require('child_process').exec);
-            const {stdout} = await bash(`${this.configuration.spec.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar tojson ${avroPath} > ${outputFile}`);
-            if (stdout.length <= 0 && this.isValidJson(outputFile)) {
+            const {stderr} = await bash(`${this.baseAvroToolsCommandLine} cat --offset 0 --limit ${this.configuration.avro.limit} --samplerate ${this.configuration.avro.samplerate} ${avroPath} ${outputFile}`);
+            if (stderr.length <= 0) {
+                Files.delete([outputFile, path.join(path.dirname(avroPath), `.sample.${path.basename(avroPath)}.crc`)]);
                 return true;
             }
+            logger.warn(`[${path.basename(avroPath)}] ${stderr}`);
         } catch (e: any) {
-            logger.error(`[${path.basename(avroPath)}] fail to export. Reason: ${e?.message || e}`);
-        } finally {
-            deleteIfSuccess && Files.deleteFiles([avroPath, outputFile]);
+            logger.error(`[${path.basename(avroPath)}] fail to export.`);
         }
 
         return false;
@@ -121,30 +146,21 @@ export class RepairAvro {
 
         try {
             const bash = util.promisify(require('child_process').exec);
-            await bash(`${this.configuration.spec.environment.java} -jar -Dlog4j.configuration=file:./bin/log4j.properties ./bin/avro-tools-1.8.2.jar repair ${avroPath} ${outputFile}`);
+            await bash(`${this.baseAvroToolsCommandLine} repair ${avroPath} ${outputFile}`);
 
-            if (!await this.analyze(outputFile, false)) {
-                Files.delete(outputFile);
-                return false;
-            } else {
-                Files.delete(avroPath);
-                Files.rename(outputFile, avroPath);
+            if (await this.analyze(outputFile)) {
+                await Files.delete(avroPath);
+                await Files.rename(outputFile, avroPath);
 
                 return true;
+            } else {
+                await Files.delete(outputFile);
             }
         } catch (e: any) {
-            logger.error(`[${path.basename(avroPath)}] cannot be repaired. Reason: ${e?.message || e}`);
+            logger.error(`[${path.basename(avroPath)}] cannot be repaired.`);
         }
 
         return false;
-    }
-
-    private isValidJson(filePath: string): boolean {
-        try {
-            return Files.getContent(filePath).length > 0;
-        } catch (e) {
-            return false;
-        }
     }
 
 }
